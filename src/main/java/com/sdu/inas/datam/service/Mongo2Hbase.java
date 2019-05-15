@@ -1,10 +1,7 @@
 package com.sdu.inas.datam.service;
 
 
-import com.sdu.inas.datam.bean.Doc;
-import com.sdu.inas.datam.bean.Event;
-import com.sdu.inas.datam.bean.HbaseModel;
-import com.sdu.inas.datam.bean.RealEntity;
+import com.sdu.inas.datam.bean.*;
 import com.sdu.inas.datam.dao.EventRepository;
 import com.sdu.inas.datam.dao.HbaseDao;
 import com.sdu.inas.datam.dao.MongoDao;
@@ -12,9 +9,14 @@ import com.sdu.inas.datam.util.CommonUtil;
 import com.sdu.inas.datam.util.HbaseModelUtil;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.Result;
+import org.apache.hadoop.mapred.IFile;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.PrintStream;
 import java.util.*;
 
 
@@ -30,31 +32,124 @@ public class Mongo2Hbase {
     @Autowired
     EventRepository eventRepository;
 
-    public  void transData(){
+    public void transData() throws IOException {
+
+
         ArrayList<Doc> allDoc = mongoDao.getAllDoc();
-        for (Doc doc:allDoc){
-            List<String> pName = doc.getPName();
-            for (String s:pName){
-                List<RealEntity> enByPrefix = getEnByPrefix(s);
-                if (enByPrefix.size()==0){
-                    String objectId = s + CommonUtil.genRandomNum();
-                    String realName = s +" ";
-                    insertRealName(realName, objectId);
-                    String  eventId = CommonUtil.getUUID();
-                    insertEvent(objectId,new Event(eventId,objectId,"2050-01-01","",realName,""));
-                    Event event = new Event(CommonUtil.getUUID(), objectId, doc.getDate(), doc.getSName().get(0), doc.getDetails(), "");
-                    insertEvent(objectId,event);
-                }else {
-                    RealEntity realEntity = enByPrefix.get(0);
-                    Event event = new Event(CommonUtil.getUUID(), realEntity.getObjectId(), doc.getDate(), doc.getSName().get(0), doc.getDetails(), "");
-                    insertEvent(realEntity.getObjectId(),event);
+        int i = 0;
+        for (Doc doc : allDoc) {
+            i++;
+            if (i < 9665) {
+
+            } else {
+                List<String> pName = doc.getPName();
+                System.out.println("---------------------------------------------------");
+                System.out.println("开始插入第 " + i + " 个事件");
+                for (String s : pName) {
+                    System.out.println("实体名称： " + s);
+                    String realName = s + " ";
+                    String basicInfo = mongoDao.getBasicInfo(s);
+                    if (basicInfo.length() < 20) {
+                        realName = s + " " + basicInfo;
+                    }
+                    List<String> objs = getObIdByPrefix(s);
+                    List<String> sName = doc.getSName();
+                    StringBuilder site = new StringBuilder();
+                    for (String sn : sName) {
+                        site.append(sn);
+                        site.append(" ");
+                    }
+                    if (objs.size() == 0) {
+                        System.out.println("库内不存在该实体，正在创建");
+                        String objectId = s + CommonUtil.genRandomNum();
+
+                        insertRealName(realName, objectId);
+                        String eventId = CommonUtil.getUUID();
+                        insertEvent(objectId, new Event(eventId, objectId, "2050-01-01", "", realName, ""));
+                        Event event = new Event(CommonUtil.getUUID(), objectId, doc.getDate(), site.toString(), doc.getDetails(), "");
+                        insertEvent(objectId, event);
+                        System.out.println("插入第 " + i + " 个事件中 " + s + " 成功");
+                    } else {
+                        String objectId = getRightOne(objs, s);
+                        if (objectId != null) {
+                            Event event = new Event(CommonUtil.getUUID(), objectId, doc.getDate(), site.toString(), doc.getDetails(), "");
+                            insertEvent(objectId, event);
+                            System.out.println("插入第 " + i + " 个事件中 " + s + " 成功");
+                        } else {
+                            System.out.println("返回列表中未发现该实体，" + "插入第 " + i + " 个事件中 " + s + " 失败");
+                        }
+                    }
                 }
             }
+
         }
     }
 
 
-    private List<RealEntity> getEnByPrefix(String prefix){
+    public void transBaseInfo() {
+
+        ArrayList<Person> allPerson = mongoDao.getAllPerson();
+        int i = 0;
+        for (Person person : allPerson) {
+            i++;
+            if (i < 1) {
+
+            } else {
+                String pName = person.getPName();
+                List<String> obIdByPrefix = getObIdByPrefix(pName);
+                if (obIdByPrefix.size() == 0) {
+                    System.out.println("库内不存在该实体，正在创建");
+                    String objectId = pName + CommonUtil.genRandomNum();
+                    String realName = pName + " ";
+                    String basicInfo = mongoDao.getBasicInfo(pName);
+                    if (basicInfo.length() < 20) {
+                        realName = pName + " " + basicInfo;
+                    }
+                    insertRealName(realName, objectId);
+                    String eventId = CommonUtil.getUUID();
+                    insertEvent(objectId, new Event(eventId, objectId, "2050-01-01", "", realName, ""));
+                    addRawText(person.getPBaseInfo(), objectId);
+                    System.out.println("插入第 " + i + " 个实体 " + objectId + " 的原始信息成功");
+
+                }
+                String objectId = getRightOne(obIdByPrefix, pName);
+                if (objectId != null) {
+                    addRawText(person.getPBaseInfo(), objectId);
+                    System.out.println("插入第 " + i + " 个实体 " + objectId + " 的原始信息成功");
+                } else {
+                    System.out.println("返回列表中未发现该实体，" + "插入第 " + i + " 个实体 " + pName + " 失败");
+                }
+            }
+
+        }
+    }
+
+    private String getRightOne(List<String> objs, String s) {
+        for (String obj : objs) {
+            if (obj.compareTo(s) == 8) {
+                return obj;
+            }
+        }
+
+        return null;
+    }
+
+
+    public void getBasic(String pName) {
+        String info = mongoDao.getBasicInfo(pName);
+        System.out.println(info);
+    }
+
+    public static void main(String[] args) {
+        String s1 = "1998/11/3";
+        String s2 = "曹操";
+        String replace = s1.replace("/", "-");
+        System.out.println(replace);
+        System.out.println(s1.compareTo(s2));
+    }
+
+
+    private List<RealEntity> getEnByPrefix(String prefix) {
         List<RealEntity> entityList = null;
         try {
             entityList = findEntitiesByPrefix(prefix);
@@ -64,19 +159,29 @@ public class Mongo2Hbase {
         return entityList;
     }
 
+    private List<String> getObIdByPrefix(String prefix) {
+        List<String> objs = null;
+        try {
+            objs = findObIdByPrefix(prefix);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return objs;
+    }
+
 
     private void insertEvent(String objectId, Event event) {
-        hbaseDao.insertData(HbaseModelUtil.BASIC_TABLE,objectId,HbaseModelUtil.BASIC_EVENT,event.getTs(),event.getEventId(),null);
-        hbaseDao.insertData(HbaseModelUtil.EVENTS_TABLE,event.getEventId(),HbaseModelUtil.EVENTS_PARAMS,"ts",event.getTs(),null);
-        hbaseDao.insertData(HbaseModelUtil.EVENTS_TABLE,event.getEventId(),HbaseModelUtil.EVENTS_PARAMS,"site",event.getSite(),null);
-        hbaseDao.insertData(HbaseModelUtil.EVENTS_TABLE,event.getEventId(),HbaseModelUtil.EVENTS_PARAMS,"details",event.getDetails(),null);
-        hbaseDao.insertData(HbaseModelUtil.EVENTS_TABLE,event.getEventId(),HbaseModelUtil.EVENTS_PARAMS,"affect",event.getAffect(),null);
+        hbaseDao.insertData(HbaseModelUtil.BASIC_TABLE, objectId, HbaseModelUtil.BASIC_EVENT, event.getTs(), event.getEventId(), null);
+        hbaseDao.insertData(HbaseModelUtil.EVENTS_TABLE, event.getEventId(), HbaseModelUtil.EVENTS_PARAMS, "ts", event.getTs(), null);
+        hbaseDao.insertData(HbaseModelUtil.EVENTS_TABLE, event.getEventId(), HbaseModelUtil.EVENTS_PARAMS, "site", event.getSite(), null);
+        hbaseDao.insertData(HbaseModelUtil.EVENTS_TABLE, event.getEventId(), HbaseModelUtil.EVENTS_PARAMS, "details", event.getDetails(), null);
+        hbaseDao.insertData(HbaseModelUtil.EVENTS_TABLE, event.getEventId(), HbaseModelUtil.EVENTS_PARAMS, "affect", event.getAffect(), null);
         eventRepository.deleteEventByEventId(event.getEventId());
         eventRepository.save(event);
     }
 
     private void insertRealName(String realName, String objectId) {
-        hbaseDao.insertData(HbaseModelUtil.BASIC_TABLE,objectId,HbaseModelUtil.BASIC_RAW,HbaseModelUtil.COLUMN1,realName,null);
+        hbaseDao.insertData(HbaseModelUtil.BASIC_TABLE, objectId, HbaseModelUtil.BASIC_RAW, HbaseModelUtil.COLUMN1, realName, null);
     }
 
     private List<RealEntity> findEntitiesByPrefix(String prefix) throws Exception {
@@ -110,6 +215,25 @@ public class Mongo2Hbase {
             entities.add(entity);
         }
         return entities;
+    }
+
+    private List<String> findObIdByPrefix(String prefix) {
+        List<Result> rets = hbaseDao.getDataWithSameBegining(HbaseModelUtil.BASIC_TABLE, prefix);
+        Iterator<Result> iterator = rets.iterator();
+        ArrayList<String> objs = new ArrayList<>();
+        while (iterator.hasNext()) {
+            Result ret = iterator.next();
+            for (KeyValue kv : ret.list()) {
+                HbaseModel hbaseModel = HbaseModelUtil.kvToHbaseModel(kv);
+                if (objs.contains(hbaseModel.getRow())) {
+
+                } else {
+                    objs.add(hbaseModel.getRow());
+                }
+            }
+        }
+
+        return objs;
     }
 
     private RealEntity packageModel(RealEntity realEntity, HbaseModel hbaseModel) {
@@ -152,6 +276,12 @@ public class Mongo2Hbase {
 
         }
         return realEntity;
+    }
+
+
+    public void addRawText(String rawText, String objectId) {
+        hbaseDao.insertData(HbaseModelUtil.BASIC_TABLE, objectId, HbaseModelUtil.BASIC_RAW, HbaseModelUtil.RAW_TEXT, rawText, null);
+
     }
 
 

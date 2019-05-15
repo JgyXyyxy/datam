@@ -20,7 +20,8 @@ public class DatamApplication implements CommandLineRunner{
 	@Override
 	public void run(String... strings) throws Exception {
 
-		mongo2Hbase.transData();
+//		mongo2Hbase.transData();
+		mongo2Hbase.transBaseInfo();
 		System.out.println("运行结束");
 
 	}
